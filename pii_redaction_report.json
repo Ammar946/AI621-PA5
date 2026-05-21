@@ -1,0 +1,7 @@
+{
+    "original": "Create the Dino runner game. My email is admin@lums.edu.pk and my API key is sk-12345abcd.",
+    "redacted": "Create the Dino runner game. My email is <EMAIL_ADDRESS> and my API key is <PERSON>.",
+    "entities": [
+        "EMAIL_ADDRESS"
+    ]
+}
