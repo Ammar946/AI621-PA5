@@ -6,87 +6,60 @@ import os
 # Initialize Pygame
 pygame.init()
 
-# Set up screen constants
+# Set up some constants
 WIDTH, HEIGHT = 800, 400
-GROUND_Y = HEIGHT - 50
-
-# Colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
-DAY_COLOR = (135, 206, 235)      # Sky blue
-NIGHT_COLOR = (25, 25, 112)      # Midnight blue
-GREEN = (46, 204, 113)           # Green cacti
-RED = (231, 76, 60)             # Red pterodactyls
-GREY = (127, 140, 141)          # Grey Dino
-
-# Dimensions
-DINO_WIDTH = 40
-DINO_STAND_HEIGHT = 50
-DINO_DUCK_HEIGHT = 25
-
-CACTUS_WIDTH = 25
-CACTUS_HEIGHT = 45
-
-PTERODACTYL_WIDTH = 40
-PTERODACTYL_HEIGHT = 30
-
-# Speed settings
-INITIAL_SPEED = 5
-MAX_SPEED = 15
-
-# Fonts
+DAY_COLOR = (135, 206, 235)
+NIGHT_COLOR = (25, 25, 112)
+CACTUS_WIDTH, CACTUS_HEIGHT = 50, 50
+PTERODACTYL_WIDTH, PTERODACTYL_HEIGHT = 50, 50
+DINO_WIDTH, DINO_HEIGHT = 50, 50
+GRAVITY = 1
+JUMP_VEL = 20
+DUCK_VEL = 10
+OBSTACLE_VEL = 5
 SCORE_FONT = pygame.font.SysFont('Arial', 24)
 GAME_OVER_FONT = pygame.font.SysFont('Arial', 48)
-
 HIGH_SCORE_FILE = 'highscore.txt'
 
 class Dino:
     def __init__(self):
-        self.width = DINO_WIDTH
-        self.height = DINO_STAND_HEIGHT
         self.x = 100
-        self.y = GROUND_Y - self.height
-        
+        self.y = HEIGHT // 2 - DINO_HEIGHT // 2
+        self.width = DINO_WIDTH
+        self.height = DINO_HEIGHT
         self.velocity = 0
-        self.gravity = 0.8
-        self.jump_vel = -14
-        
+        self.gravity = GRAVITY
         self.is_jumping = False
         self.is_ducking = False
 
     def jump(self):
-        if not self.is_jumping and not self.is_ducking:
-            self.velocity = self.jump_vel
+        if not self.is_jumping:
+            self.velocity = -JUMP_VEL
             self.is_jumping = True
 
-    def duck(self):
-        if not self.is_jumping:
-            self.is_ducking = True
-            self.height = DINO_DUCK_HEIGHT
-            self.y = GROUND_Y - self.height
-
-    def stand(self):
-        self.is_ducking = False
-        self.height = DINO_STAND_HEIGHT
-        self.y = GROUND_Y - self.height
-
-    def update(self):
+    def fall(self):
         if self.is_jumping:
             self.velocity += self.gravity
             self.y += self.velocity
-            
-            # Check landing
-            if self.y >= GROUND_Y - self.height:
-                self.y = GROUND_Y - self.height
+            if self.y > HEIGHT // 2 - DINO_HEIGHT // 2:
+                self.y = HEIGHT // 2 - DINO_HEIGHT // 2
                 self.is_jumping = False
-                self.velocity = 0
 
-    def get_rect(self):
-        return pygame.Rect(self.x, self.y, self.width, self.height)
+    def duck(self):
+        if not self.is_ducking:
+            self.velocity = DUCK_VEL
+            self.is_ducking = True
 
-    def draw(self, screen):
-        pygame.draw.rect(screen, GREY, self.get_rect())
-
+    def update(self):
+        if self.is_jumping:
+            self.fall()
+        elif self.is_ducking:
+            self.y += self.velocity
+            if self.y > HEIGHT // 2 - DINO_HEIGHT // 2:
+                self.y = HEIGHT // 2 - DINO_HEIGHT // 2
+                self.is_ducking = False
 
 class Obstacle:
     def __init__(self, x, y, width, height, type):
@@ -95,21 +68,12 @@ class Obstacle:
         self.width = width
         self.height = height
         self.type = type
-        self.passed = False
 
-    def update(self, speed):
-        self.x -= speed
+    def update(self):
+        self.x -= OBSTACLE_VEL
 
     def is_off_screen(self):
         return self.x < -self.width
-
-    def get_rect(self):
-        return pygame.Rect(self.x, self.y, self.width, self.height)
-
-    def draw(self, screen):
-        color = GREEN if self.type == 'cactus' else RED
-        pygame.draw.rect(screen, color, self.get_rect())
-
 
 class Score:
     def __init__(self):
@@ -126,153 +90,84 @@ class Score:
 
     def get_high_score(self):
         try:
-            if os.path.exists(HIGH_SCORE_FILE):
-                with open(HIGH_SCORE_FILE, 'r') as f:
-                    content = f.read().strip()
-                    return int(content) if content else 0
-        except Exception:
-            pass
-        return 0
+            with open(HIGH_SCORE_FILE, 'r') as f:
+                return int(f.read())
+        except FileNotFoundError:
+            return 0
 
     def save_high_score(self):
-        try:
-            with open(HIGH_SCORE_FILE, 'w') as f:
-                f.write(str(self.high_score))
-        except Exception:
-            pass
-
+        with open(HIGH_SCORE_FILE, 'w') as f:
+            f.write(str(self.high_score))
 
 class Game:
     def __init__(self):
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
-        pygame.display.set_caption("PA5 Dino Runner")
-        self.clock = pygame.time.Clock()
-        
-        self.background_color = DAY_COLOR
-        self.cycle_timer = 0
-        
-        # Setup Pygame Custom Timer Event for Obstacle Spawning
-        self.SPAWN_EVENT = pygame.USEREVENT + 1
-        pygame.time.set_timer(self.SPAWN_EVENT, 1800) # Every 1.8 seconds initially
-        
-        self.reset()
-
-    def reset(self):
         self.dino = Dino()
         self.obstacles = []
         self.score = Score()
         self.game_active = True
-        self.speed = INITIAL_SPEED
-
-    def spawn_obstacle(self):
-        # Prevent spawning if game is not active
-        if not self.game_active:
-            return
-
-        # Randomize obstacle type (Cactus vs Pterodactyl)
-        if random.random() < 0.65:
-            # Spawn Cactus with Clustering (1 to 3 items)
-            cluster_size = random.randint(1, 3)
-            width = CACTUS_WIDTH * cluster_size
-            height = CACTUS_HEIGHT
-            y = GROUND_Y - height
-            self.obstacles.append(Obstacle(WIDTH, y, width, height, 'cactus'))
-        else:
-            # Spawn Pterodactyl flying at low or medium heights
-            # y_pos is high enough to duck under, or low enough to jump over
-            y_pos = random.choice([GROUND_Y - 75, GROUND_Y - 45])
-            self.obstacles.append(Obstacle(WIDTH, y_pos, PTERODACTYL_WIDTH, PTERODACTYL_HEIGHT, 'pterodactyl'))
-            
-        # Dynamically change the next timer interval slightly to prevent static rhythmic spacing
-        next_interval = random.randint(1200, 2400)
-        pygame.time.set_timer(self.SPAWN_EVENT, next_interval)
+        self.day_night_cycle = True
+        self.background_color = DAY_COLOR
+        self.cycle_timer = 0
+        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        self.clock = pygame.time.Clock()
 
     def update(self):
         if self.game_active:
-            # Update Day/Night background cycle
-            self.cycle_timer += 1
-            if self.cycle_timer >= 600:  # Alternate background every 10 seconds (600 frames)
-                self.cycle_timer = 0
-                self.background_color = NIGHT_COLOR if self.background_color == DAY_COLOR else DAY_COLOR
-            
-            # Update Dino
             self.dino.update()
-            
-            # Gradually increase game speed as score increments
-            self.speed = min(INITIAL_SPEED + (self.score.current_score // 5), MAX_SPEED)
-            
-            # Update Obstacles
-            for obstacle in list(self.obstacles):
-                obstacle.update(self.speed)
-                
-                # Check for successful pass (when obstacle is completely behind Dino)
-                if not obstacle.passed and (obstacle.x + obstacle.width) < self.dino.x:
-                    obstacle.passed = True
-                    self.score.increment()
-                    self.score.update_high_score()
-                
-                # Remove offscreen obstacles
+            for obstacle in self.obstacles:
+                obstacle.update()
                 if obstacle.is_off_screen():
                     self.obstacles.remove(obstacle)
-                
-                # Check Collisions
-                if self.dino.get_rect().colliderect(obstacle.get_rect()):
+                if (obstacle.x < self.dino.x + self.dino.width and
+                        obstacle.x + obstacle.width > self.dino.x and
+                        obstacle.y < self.dino.y + self.dino.height and
+                        obstacle.y + obstacle.height > self.dino.y):
                     self.game_active = False
+            self.score.increment()
+            self.score.update_high_score()
+            if random.random() < 0.05:
+                self.obstacles.append(Obstacle(WIDTH, HEIGHT // 2 - CACTUS_HEIGHT // 2, CACTUS_WIDTH, CACTUS_HEIGHT, 'cactus'))
+            if random.random() < 0.05:
+                self.obstacles.append(Obstacle(WIDTH, HEIGHT // 2 - PTERODACTYL_HEIGHT // 2, PTERODACTYL_WIDTH, PTERODACTYL_HEIGHT, 'pterodactyl'))
+            self.cycle_timer += 1
+            if self.cycle_timer >= 600:
+                self.cycle_timer = 0
+                if self.background_color == DAY_COLOR:
+                    self.background_color = NIGHT_COLOR
+                else:
+                    self.background_color = DAY_COLOR
 
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-                
-            elif event.type == self.SPAWN_EVENT:
-                self.spawn_obstacle()
-                
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
-                    if self.game_active:
-                        self.dino.jump()
-                    else:
-                        self.reset()  # Triggers a perfect reset on SPACE
+                    self.dino.jump()
                 elif event.key == pygame.K_DOWN:
-                    if self.game_active:
-                        self.dino.duck()
-                        
+                    self.dino.duck()
             elif event.type == pygame.KEYUP:
                 if event.key == pygame.K_DOWN:
-                    if self.game_active:
-                        self.dino.stand()
+                    self.dino.is_ducking = False
 
     def draw(self):
         self.screen.fill(self.background_color)
-        
-        # Draw Ground Line
-        line_color = WHITE if self.background_color == NIGHT_COLOR else BLACK
-        pygame.draw.line(self.screen, line_color, (0, GROUND_Y), (WIDTH, GROUND_Y), 3)
-        
-        # Draw Entities
-        self.dino.draw(self.screen)
         for obstacle in self.obstacles:
-            obstacle.draw(self.screen)
-            
-        # Draw HUD texts
-        text_color = WHITE if self.background_color == NIGHT_COLOR else BLACK
-        
-        score_text = SCORE_FONT.render(f"Score: {self.score.current_score}", True, text_color)
-        self.screen.blit(score_text, (20, 20))
-        
-        hi_score_text = SCORE_FONT.render(f"HI: {self.score.high_score}", True, text_color)
-        self.screen.blit(hi_score_text, (WIDTH - 120, 20))
-        
+            if obstacle.type == 'cactus':
+                pygame.draw.rect(self.screen, WHITE, (obstacle.x, obstacle.y, obstacle.width, obstacle.height))
+            elif obstacle.type == 'pterodactyl':
+                pygame.draw.rect(self.screen, WHITE, (obstacle.x, obstacle.y, obstacle.width, obstacle.height))
+        pygame.draw.rect(self.screen, WHITE, (self.dino.x, self.dino.y, self.dino.width, self.dino.height))
+        score_text = SCORE_FONT.render(f'Score: {self.score.current_score}', True, BLACK)
+        self.screen.blit(score_text, (10, 10))
+        high_score_text = SCORE_FONT.render(f'High Score: {self.score.high_score}', True, BLACK)
+        self.screen.blit(high_score_text, (10, 30))
         if not self.game_active:
-            # Draw Game Over overlay
-            go_text = GAME_OVER_FONT.render("GAME OVER", True, RED)
-            restart_text = SCORE_FONT.render("Press SPACE to Restart", True, text_color)
-            
-            # Position overlays centrally
-            self.screen.blit(go_text, (WIDTH // 2 - go_text.get_width() // 2, HEIGHT // 2 - 50))
-            self.screen.blit(restart_text, (WIDTH // 2 - restart_text.get_width() // 2, HEIGHT // 2 + 10))
-
+            game_over_text = GAME_OVER_FONT.render('Game Over', True, BLACK)
+            self.screen.blit(game_over_text, (WIDTH // 2 - 100, HEIGHT // 2 - 50))
+            restart_text = SCORE_FONT.render('Press Space to restart', True, BLACK)
+            self.screen.blit(restart_text, (WIDTH // 2 - 100, HEIGHT // 2))
         pygame.display.flip()
 
     def run(self):
@@ -281,7 +176,6 @@ class Game:
             self.update()
             self.draw()
             self.clock.tick(60)
-
 
 if __name__ == '__main__':
     game = Game()
